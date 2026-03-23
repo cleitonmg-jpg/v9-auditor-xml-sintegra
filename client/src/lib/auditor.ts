@@ -1,0 +1,170 @@
+import type {
+  SintegraData,
+  XmlNFe,
+  AuditRecord,
+  AuditResult,
+  Record50,
+  AuditStatus,
+} from "@shared/schema";
+
+const TOLERANCE = 0.02; // R$ 0,02 tolerance for float comparison
+
+function normNum(n: string): string {
+  return String(parseInt(n, 10) || 0);
+}
+
+function makeKey(modelo: string, numero: string): string {
+  return `${modelo.trim()}-${normNum(numero)}`;
+}
+
+export function auditar(
+  sintegraData: SintegraData,
+  xmlNfes: XmlNFe[],
+  cancelamentosXml: XmlNFe[]
+): AuditResult {
+  const { companyInfo, records50, records61 } = sintegraData;
+
+  // Build set of cancelled XML chaves/numbers per model
+  const canceladosXmlKeys = new Set<string>();
+  for (const c of cancelamentosXml) {
+    if (c.numero) {
+      canceladosXmlKeys.add(makeKey(c.modelo, c.numero));
+    }
+  }
+
+  // Filter XML records: remove those that have a cancellation
+  // Only keep model 55 and 65
+  const xmlValidos = xmlNfes.filter((nfe) => {
+    if (nfe.modelo !== "55" && nfe.modelo !== "65") return false;
+    const key = makeKey(nfe.modelo, nfe.numero);
+    return !canceladosXmlKeys.has(key);
+  });
+
+  // Build map: key -> XmlNFe
+  const xmlMap = new Map<string, XmlNFe>();
+  for (const nfe of xmlValidos) {
+    const key = makeKey(nfe.modelo, nfe.numero);
+    // If duplicates exist, keep the first
+    if (!xmlMap.has(key)) xmlMap.set(key, nfe);
+  }
+
+  // Build map from SINTEGRA Reg50: key -> Record50[]
+  // Only model 55 (emitente=P próprio) and 65 (NFC-e)
+  const sintegraMap = new Map<string, Record50>();
+  for (const r of records50) {
+    const modelo = r.modelo.trim();
+    if (modelo === "55" && r.emitente.trim() !== "P") continue;
+    if (modelo !== "55" && modelo !== "65") continue;
+    const key = makeKey(modelo, r.numero);
+    if (!sintegraMap.has(key)) sintegraMap.set(key, r);
+  }
+
+  const auditRecords: AuditRecord[] = [];
+
+  // Collect all keys from both sides
+  const allKeys = new Set<string>([
+    ...Array.from(xmlMap.keys()),
+    ...Array.from(sintegraMap.keys()),
+  ]);
+
+  for (const key of Array.from(allKeys)) {
+    const xmlRec = xmlMap.get(key) ?? null;
+    const sintRec = sintegraMap.get(key) ?? null;
+
+    const numero = xmlRec?.numero ?? normNum(sintRec?.numero ?? "");
+    const serie = xmlRec?.serie ?? (sintRec?.serie?.trim() ?? "");
+    const modelo = xmlRec?.modelo ?? sintRec?.modelo?.trim() ?? "";
+    const dataEmissao = xmlRec?.dataEmissao || sintRec?.date || "";
+
+    const sintegraValor = sintRec ? sintRec.valorTotal : null;
+    const xmlValor = xmlRec ? xmlRec.valorTotal : null;
+
+    let status: AuditStatus;
+    let diferenca = 0;
+
+    if (sintRec?.cancelada && !xmlRec) {
+      // Cancelled in SINTEGRA, no XML
+      status = "cancelado_sintegra";
+    } else if (sintRec && xmlRec) {
+      diferenca = Math.round((xmlValor! - sintegraValor!) * 100) / 100;
+      if (sintRec.cancelada) {
+        status = "cancelado_sintegra";
+      } else if (Math.abs(diferenca) > TOLERANCE) {
+        status = "divergencia";
+      } else {
+        status = "ok";
+        diferenca = 0;
+      }
+    } else if (sintRec && !xmlRec) {
+      if (sintRec.cancelada) {
+        status = "cancelado_sintegra";
+      } else {
+        status = "somente_sintegra";
+      }
+    } else if (!sintRec && xmlRec) {
+      status = "somente_xml";
+    } else {
+      status = "ok";
+    }
+
+    auditRecords.push({
+      id: key,
+      numero,
+      serie,
+      modelo,
+      dataEmissao,
+      status,
+      sintegraValor,
+      sintegraRecord: sintRec,
+      xmlValor,
+      xmlRecord: xmlRec,
+      diferenca,
+    });
+  }
+
+  // Sort by model then by number
+  auditRecords.sort((a, b) => {
+    if (a.modelo !== b.modelo) return a.modelo.localeCompare(b.modelo);
+    return parseInt(a.numero) - parseInt(b.numero);
+  });
+
+  // Compute totals
+  const totalOk = auditRecords.filter((r) => r.status === "ok").length;
+  const totalDivergencia = auditRecords.filter((r) => r.status === "divergencia").length;
+  const totalSomenteStegra = auditRecords.filter((r) => r.status === "somente_sintegra").length;
+  const totalSomenteXml = auditRecords.filter((r) => r.status === "somente_xml").length;
+  const totalCancelados = auditRecords.filter(
+    (r) => r.status === "cancelado_sintegra" || r.status === "cancelado_xml"
+  ).length;
+
+  const totalSintegra = records50
+    .filter((r) => {
+      if (r.cancelada) return false;
+      const mod = r.modelo.trim();
+      if (mod === "55") return r.emitente.trim() === "P";
+      return mod === "65";
+    })
+    .reduce((s, r) => s + r.valorTotal, 0);
+
+  const totalXml = xmlValidos.reduce((s, r) => s + r.valorTotal, 0);
+
+  return {
+    companyInfo,
+    records: auditRecords,
+    totalSintegra: Math.round(totalSintegra * 100) / 100,
+    totalXml: Math.round(totalXml * 100) / 100,
+    totalOk,
+    totalDivergencia,
+    totalSomenteStegra,
+    totalSomenteXml,
+    totalCancelados,
+    records61,
+  };
+}
+
+export function fmtBRL(v: number): string {
+  return v.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
