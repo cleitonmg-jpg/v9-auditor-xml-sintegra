@@ -132,10 +132,11 @@ export function auditar(
       // Cancelled in SINTEGRA, no XML
       status = "cancelado_sintegra";
     } else if (sintRec && xmlRec) {
-      diferenca = Math.round((xmlValor! - sintegraValor!) * 100) / 100;
       if (sintRec.cancelada) {
+        // Cancelled documents: never show a difference
         status = "cancelado_sintegra";
-      } else if (Math.abs(diferenca) > TOLERANCE) {
+      } else if (Math.abs(Math.round((xmlValor! - sintegraValor!) * 100) / 100) > TOLERANCE) {
+        diferenca = Math.round((xmlValor! - sintegraValor!) * 100) / 100;
         status = "divergencia";
       } else {
         status = "ok";
