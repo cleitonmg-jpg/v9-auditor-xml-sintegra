@@ -425,7 +425,7 @@ export default function Home() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-muted-foreground">
             {[
               { icon: <FileText className="w-4 h-4" />, label: "NF-e Mod.55", sub: "Reg. 50 SINTEGRA" },
-              { icon: <FileText className="w-4 h-4" />, label: "NFC-e Mod.65", sub: "Reg. 50 SINTEGRA" },
+              { icon: <FileText className="w-4 h-4" />, label: "NFC-e Mod.65", sub: "Reg. 61 SINTEGRA" },
               { icon: <XCircle className="w-4 h-4" />, label: "Cancelamentos", sub: "tpEvento 110111" },
               { icon: <AlertTriangle className="w-4 h-4" />, label: "Divergências", sub: "Valores diferentes" },
             ].map((item, i) => (
@@ -528,7 +528,7 @@ export default function Home() {
         {/* Totals comparison */}
         <div className="grid md:grid-cols-2 gap-3">
           <div className="rounded-xl border bg-card p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total SINTEGRA (Reg.50 mod.55+65)</p>
+            <p className="text-xs text-muted-foreground mb-1">Total SINTEGRA (Reg.50 mod.55 + Reg.61 mod.65)</p>
             <p className="text-xl font-bold font-mono">R$ {fmtBRL(result.totalSintegra)}</p>
           </div>
           <div className="rounded-xl border bg-card p-4">
@@ -582,7 +582,7 @@ export default function Home() {
             )}
             {records61.length > 0 && (
               <TabsTrigger value="ecf61">
-                ECF / Reg.61 <Badge variant="secondary" className="ml-1 text-xs">{records61.length}</Badge>
+                NFC-e / Reg.61 <Badge variant="secondary" className="ml-1 text-xs">{records61.length}</Badge>
               </TabsTrigger>
             )}
           </TabsList>
@@ -625,7 +625,7 @@ export default function Home() {
 
           <TabsContent value="ecf61" className="mt-4">
             <div className="mb-3 flex items-center gap-2 p-3 bg-muted border rounded-lg text-muted-foreground text-sm">
-              Registros 61 (ECF/PDV) do SINTEGRA — exibidos separadamente pois agrupam faixas de cupons
+              Registros 61 (NFC-e / Cupom Fiscal) do SINTEGRA — referência dos cupons individuais usados no cruzamento NFC-e Mod.65
             </div>
             <Ecf61Table records={records61} />
           </TabsContent>

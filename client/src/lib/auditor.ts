@@ -52,20 +52,53 @@ export function auditar(
   }
 
   // Build map from SINTEGRA Reg50: key -> Record50
-  // Only model 55 (emitente=P próprio) and 65 (NFC-e)
+  // Only model 55 (emitente=P próprio)
   // Multiple lines per NF (different CFOP/aliquota) → sum valorTotal
   const sintegraMap = new Map<string, Record50>();
   for (const r of records50) {
     const modelo = r.modelo.trim();
-    if (modelo === "55" && r.emitente.trim() !== "P") continue;
-    if (modelo !== "55" && modelo !== "65") continue;
+    if (modelo !== "55") continue;
+    if (r.emitente.trim() !== "P") continue;
     const key = makeKey(modelo, r.numero);
     const existing = sintegraMap.get(key);
     if (!existing) {
-      // Clone to avoid mutating original record
       sintegraMap.set(key, { ...r });
     } else {
       // Same NF, different CFOP/aliquota line — accumulate total
+      existing.valorTotal = Math.round((existing.valorTotal + r.valorTotal) * 100) / 100;
+    }
+  }
+
+  // NFC-e (mod.65) in SINTEGRA is in Registro 61, not Registro 50.
+  // Each record61 line corresponds to one cupom (numIniCupom = nNF in XML).
+  for (const r of records61) {
+    if (r.modelo.trim() !== "65") continue;
+    const nNF = String(parseInt(r.numIniCupom, 10));
+    const key = makeKey("65", nNF);
+    const existing = sintegraMap.get(key);
+    if (!existing) {
+      // Create a Record50-compatible entry from Record61 data
+      sintegraMap.set(key, {
+        id: r.id,
+        cnpj: r.cnpj,
+        ie: r.ie,
+        date: r.date,
+        uf: "",
+        modelo: "65",
+        serie: r.numOrdemECF,
+        numero: nNF,
+        cfop: "",
+        emitente: "P",
+        valorTotal: r.valorTotal,
+        baseCalculo: 0,
+        valorICMS: 0,
+        isentaNT: 0,
+        outras: 0,
+        aliquota: 0,
+        situacao: "",
+        cancelada: false,
+      });
+    } else {
       existing.valorTotal = Math.round((existing.valorTotal + r.valorTotal) * 100) / 100;
     }
   }
@@ -148,13 +181,9 @@ export function auditar(
     (r) => r.status === "cancelado_sintegra" || r.status === "cancelado_xml"
   ).length;
 
-  const totalSintegra = records50
-    .filter((r) => {
-      if (r.cancelada) return false;
-      const mod = r.modelo.trim();
-      if (mod === "55") return r.emitente.trim() === "P";
-      return mod === "65";
-    })
+  // totalSintegra uses the consolidated sintegraMap (Reg.50 mod.55 + Reg.61 mod.65)
+  const totalSintegra = Array.from(sintegraMap.values())
+    .filter((r) => !r.cancelada)
     .reduce((s, r) => s + r.valorTotal, 0);
 
   const totalXml = xmlValidos.reduce((s, r) => s + r.valorTotal, 0);
