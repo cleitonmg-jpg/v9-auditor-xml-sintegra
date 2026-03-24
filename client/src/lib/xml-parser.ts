@@ -62,9 +62,14 @@ function parseNFe(xmlText: string, fileName: string): XmlNFe | null {
   }
 
   // Regular NF-e or NFC-e
-  // Check authorization status
-  const cStat = getTagText(doc, "cStat");
-  const xMotivo = getTagText(doc, "xMotivo");
+  // Authorization status must come from infProt element specifically.
+  // Files without infProt are raw XMLs (no protocol yet) — skip them
+  // so they don't pollute the cancelamentos list.
+  const infProt = doc.getElementsByTagName("infProt")[0];
+  if (!infProt) return null;
+
+  const cStat = getTagText(infProt, "cStat");
+  const xMotivo = getTagText(infProt, "xMotivo");
 
   // Valid if cStat=100 (Autorizado o uso da NF-e)
   const autorizado = cStat === "100";

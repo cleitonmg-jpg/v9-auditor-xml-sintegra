@@ -41,11 +41,14 @@ export function auditar(
   });
 
   // Build map: key -> XmlNFe
+  // If duplicates exist, prefer the authorized (cancelada=false) one
   const xmlMap = new Map<string, XmlNFe>();
   for (const nfe of xmlValidos) {
     const key = makeKey(nfe.modelo, nfe.numero);
-    // If duplicates exist, keep the first
-    if (!xmlMap.has(key)) xmlMap.set(key, nfe);
+    const existing = xmlMap.get(key);
+    if (!existing || (!nfe.cancelada && existing.cancelada)) {
+      xmlMap.set(key, nfe);
+    }
   }
 
   // Build map from SINTEGRA Reg50: key -> Record50[]
