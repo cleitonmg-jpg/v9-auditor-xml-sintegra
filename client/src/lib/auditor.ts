@@ -71,13 +71,14 @@ export function auditar(
 
   // NFC-e (mod.65) in SINTEGRA is in Registro 61, not Registro 50.
   // Each record61 line corresponds to one cupom (numIniCupom = nNF in XML).
+  // Cupom is cancelled if valorTotal=0 OR if there's a matching procEvento XML.
   for (const r of records61) {
     if (r.modelo.trim() !== "65") continue;
     const nNF = String(parseInt(r.numIniCupom, 10));
     const key = makeKey("65", nNF);
+    const cancelada = r.valorTotal === 0 || canceladosXmlKeys.has(key);
     const existing = sintegraMap.get(key);
     if (!existing) {
-      // Create a Record50-compatible entry from Record61 data
       sintegraMap.set(key, {
         id: r.id,
         cnpj: r.cnpj,
@@ -95,11 +96,12 @@ export function auditar(
         isentaNT: 0,
         outras: 0,
         aliquota: 0,
-        situacao: "",
-        cancelada: false,
+        situacao: cancelada ? "S" : "",
+        cancelada,
       });
     } else {
       existing.valorTotal = Math.round((existing.valorTotal + r.valorTotal) * 100) / 100;
+      if (cancelada) existing.cancelada = true;
     }
   }
 

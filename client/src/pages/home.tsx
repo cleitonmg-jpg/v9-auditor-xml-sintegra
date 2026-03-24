@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { parseSintegra } from "@/lib/sintegra-parser";
 import { parseXmlFiles } from "@/lib/xml-parser";
 import { auditar, fmtBRL } from "@/lib/auditor";
-import type { AuditResult, AuditRecord, AuditStatus, Record61 } from "@shared/schema";
+import type { AuditResult, AuditRecord, AuditStatus } from "@shared/schema";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -173,48 +173,6 @@ function AuditTable({ records, search }: { records: AuditRecord[]; search: strin
   );
 }
 
-// ── ECF Table (Registro 61) ──────────────────────────────────────────────────
-
-function Ecf61Table({ records }: { records: Record61[] }) {
-  if (records.length === 0) return null;
-  return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 border-b">
-          <tr>
-            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Data</th>
-            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Modelo</th>
-            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Série ECF</th>
-            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Cupom Ini</th>
-            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Cupom Fim</th>
-            <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">Valor Total</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y">
-          {records.map((r) => (
-            <tr key={r.id} className="hover:bg-muted/30 transition-colors">
-              <td className="px-3 py-2 text-muted-foreground">{r.date}</td>
-              <td className="px-3 py-2">{r.modelo}</td>
-              <td className="px-3 py-2 font-mono">{r.numOrdemECF}</td>
-              <td className="px-3 py-2 font-mono">{r.numIniCupom}</td>
-              <td className="px-3 py-2 font-mono">{r.numFinCupom}</td>
-              <td className="px-3 py-2 text-right font-mono">{fmtBRL(r.valorTotal)}</td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot className="bg-muted/30 border-t font-semibold">
-          <tr>
-            <td colSpan={5} className="px-3 py-2 text-sm">Total ({records.length} registros)</td>
-            <td className="px-3 py-2 text-right font-mono text-sm">
-              {fmtBRL(records.reduce((s, r) => s + r.valorTotal, 0))}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  );
-}
-
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -312,7 +270,6 @@ export default function Home() {
   const recordsSomenteStegra = result?.records.filter((r) => r.status === "somente_sintegra") ?? [];
   const recordsSomenteXml = result?.records.filter((r) => r.status === "somente_xml") ?? [];
   const recordsDivergencia = result?.records.filter((r) => r.status === "divergencia") ?? [];
-  const records61 = result?.records61 ?? [];
 
   // ── Render: Upload ──
 
@@ -580,11 +537,6 @@ export default function Home() {
                 Falta no SINTEGRA <Badge className="ml-1 text-xs bg-purple-100 text-purple-800 border-purple-200">{recordsSomenteXml.length}</Badge>
               </TabsTrigger>
             )}
-            {records61.length > 0 && (
-              <TabsTrigger value="ecf61">
-                NFC-e / Reg.61 <Badge variant="secondary" className="ml-1 text-xs">{records61.length}</Badge>
-              </TabsTrigger>
-            )}
           </TabsList>
 
           <TabsContent value="todos" className="mt-4">
@@ -623,12 +575,6 @@ export default function Home() {
             <AuditTable records={recordsSomenteXml} search={search} />
           </TabsContent>
 
-          <TabsContent value="ecf61" className="mt-4">
-            <div className="mb-3 flex items-center gap-2 p-3 bg-muted border rounded-lg text-muted-foreground text-sm">
-              Registros 61 (NFC-e / Cupom Fiscal) do SINTEGRA — referência dos cupons individuais usados no cruzamento NFC-e Mod.65
-            </div>
-            <Ecf61Table records={records61} />
-          </TabsContent>
         </Tabs>
       </div>
     </div>
