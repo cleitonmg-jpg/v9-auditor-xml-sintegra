@@ -136,10 +136,14 @@ function AuditTable({ records, search }: { records: AuditRecord[]; search: strin
                 <Badge variant="outline" className="text-xs font-mono">{r.modelo}</Badge>
               </td>
               <td className="px-3 py-2 text-right font-mono">
-                {r.sintegraValor !== null ? fmtBRL(r.sintegraValor) : <span className="text-muted-foreground">—</span>}
+                {r.status === "cancelado_sintegra" || r.status === "cancelado_xml"
+                  ? <span className="text-muted-foreground">—</span>
+                  : r.sintegraValor !== null ? fmtBRL(r.sintegraValor) : <span className="text-muted-foreground">—</span>}
               </td>
               <td className="px-3 py-2 text-right font-mono">
-                {r.xmlValor !== null ? fmtBRL(r.xmlValor) : <span className="text-muted-foreground">—</span>}
+                {r.status === "cancelado_sintegra" || r.status === "cancelado_xml"
+                  ? <span className="text-muted-foreground">—</span>
+                  : r.xmlValor !== null ? fmtBRL(r.xmlValor) : <span className="text-muted-foreground">—</span>}
               </td>
               <td className={`px-3 py-2 text-right font-mono font-semibold ${r.diferenca !== 0 ? "text-amber-700" : "text-muted-foreground"}`}>
                 {r.diferenca !== 0
@@ -154,10 +158,10 @@ function AuditTable({ records, search }: { records: AuditRecord[]; search: strin
           <tr>
             <td colSpan={4} className="px-3 py-2">Total ({sorted.length} registros)</td>
             <td className="px-3 py-2 text-right font-mono">
-              {fmtBRL(sorted.reduce((s, r) => s + (r.sintegraValor ?? 0), 0))}
+              {fmtBRL(sorted.filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml").reduce((s, r) => s + (r.sintegraValor ?? 0), 0))}
             </td>
             <td className="px-3 py-2 text-right font-mono">
-              {fmtBRL(sorted.reduce((s, r) => s + (r.xmlValor ?? 0), 0))}
+              {fmtBRL(sorted.filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml").reduce((s, r) => s + (r.xmlValor ?? 0), 0))}
             </td>
             <td className="px-3 py-2 text-right font-mono text-amber-700">
               {(() => {
