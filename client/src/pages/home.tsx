@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Upload, FileText, FolderOpen, BarChart3, CheckCircle2,
   AlertTriangle, XCircle, FileX, FilePlus, RotateCcw,
-  Building2, Search, ChevronDown, ChevronUp, Printer,
+  Building2, Search, ChevronDown, ChevronUp, Printer, FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +58,7 @@ function statusBadge(s: AuditStatus) {
 
 // ── Table component ─────────────────────────────────────────────────────────
 
-function AuditTable({ records, search }: { records: AuditRecord[]; search: string }) {
+function AuditTable({ records, search, showCancelledValues = false }: { records: AuditRecord[]; search: string; showCancelledValues?: boolean }) {
   const [sortField, setSortField] = useState<string>("numero");
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -138,12 +138,12 @@ function AuditTable({ records, search }: { records: AuditRecord[]; search: strin
                 <Badge variant="outline" className="text-xs font-mono">{r.modelo}</Badge>
               </td>
               <td className="px-3 py-2 text-right font-mono">
-                {r.status === "cancelado_sintegra" || r.status === "cancelado_xml"
+                {(r.status === "cancelado_sintegra" || r.status === "cancelado_xml") && !showCancelledValues
                   ? <span className="text-muted-foreground">—</span>
                   : r.sintegraValor !== null ? fmtBRL(r.sintegraValor) : <span className="text-muted-foreground">—</span>}
               </td>
               <td className="px-3 py-2 text-right font-mono">
-                {r.status === "cancelado_sintegra" || r.status === "cancelado_xml"
+                {(r.status === "cancelado_sintegra" || r.status === "cancelado_xml") && !showCancelledValues
                   ? <span className="text-muted-foreground">—</span>
                   : r.xmlValor !== null ? fmtBRL(r.xmlValor) : <span className="text-muted-foreground">—</span>}
               </td>
@@ -181,7 +181,7 @@ function AuditTable({ records, search }: { records: AuditRecord[]; search: strin
 
 // ── Print ───────────────────────────────────────────────────────────────────
 
-function printRecords(title: string, records: AuditRecord[], company: { name: string; cnpj: string }) {
+function printRecords(title: string, records: AuditRecord[], company: { name: string; cnpj: string }, showCancelledValues = false) {
   const win = window.open("", "_blank", "width=960,height=720");
   if (!win) return;
 
@@ -200,8 +200,8 @@ function printRecords(title: string, records: AuditRecord[], company: { name: st
     return `<tr style="${bgMap[r.status]}">
       <td>${r.numero}</td><td>${r.serie || "—"}</td><td>${r.dataEmissao || "—"}</td>
       <td style="text-align:center">${r.modelo}</td>
-      <td style="text-align:right">${cancelled ? "—" : r.sintegraValor !== null ? "R$ " + fmtBRL(r.sintegraValor) : "—"}</td>
-      <td style="text-align:right">${cancelled ? "—" : r.xmlValor !== null ? "R$ " + fmtBRL(r.xmlValor) : "—"}</td>
+      <td style="text-align:right">${(cancelled && !showCancelledValues) ? "—" : r.sintegraValor !== null ? "R$ " + fmtBRL(r.sintegraValor) : "—"}</td>
+      <td style="text-align:right">${(cancelled && !showCancelledValues) ? "—" : r.xmlValor !== null ? "R$ " + fmtBRL(r.xmlValor) : "—"}</td>
       <td style="text-align:right">${r.diferenca !== 0 ? (r.diferenca > 0 ? "+" : "") + fmtBRL(r.diferenca) : "—"}</td>
       <td>${statusLabel(r.status)}</td>
     </tr>`;
@@ -235,6 +235,54 @@ function printRecords(title: string, records: AuditRecord[], company: { name: st
   <script>window.onload=()=>window.print();</script>
   </body></html>`);
   win.document.close();
+}
+
+// ── Export CSV (opens in Excel) ──────────────────────────────────────────────
+
+function exportCsv(title: string, records: AuditRecord[], company: { name: string; cnpj: string }) {
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const num = (v: number | null) => v !== null ? v.toFixed(2).replace(".", ",") : "";
+
+  const header = ["Nº Nota", "Série", "Data Emissão", "Modelo", "Valor SINTEGRA", "Valor XML", "Diferença", "Status"];
+
+  const rows = records.map((r) => {
+    const sint = r.sintegraValor !== null ? num(r.sintegraValor) : "";
+    const xml  = r.xmlValor !== null ? num(r.xmlValor) : "";
+    const diff = r.diferenca !== 0 ? num(r.diferenca) : "";
+    return [r.numero, r.serie || "", r.dataEmissao || "", r.modelo, sint, xml, diff, statusLabel(r.status)]
+      .map(esc).join(";");
+  });
+
+  // Footer: totals excl. cancelled
+  const valid = (r: AuditRecord) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml";
+  const tSint = records.filter(valid).reduce((s, r) => s + (r.sintegraValor ?? 0), 0);
+  const tXml  = records.filter(valid).reduce((s, r) => s + (r.xmlValor ?? 0), 0);
+  const tDiff = records.filter(valid).reduce((s, r) => s + r.diferenca, 0);
+  const footerRow = [
+    `"Total (${records.length} registros — ${records.filter(valid).length} válidos)"`,
+    `""`, `""`, `""`,
+    esc(num(tSint)), esc(num(tXml)), esc(num(tDiff)), `""`,
+  ].join(";");
+
+  const lines = [
+    `${esc("Auditor XML × SINTEGRA — " + title)}`,
+    `${esc(company.name)};${esc("CNPJ: " + company.cnpj)}`,
+    "",
+    header.map(esc).join(";"),
+    ...rows,
+    footerRow,
+  ];
+
+  const BOM = "\uFEFF";
+  const blob = new Blob([BOM + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${title.replace(/\s+/g, "_")}_${company.cnpj}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ── Main Page ───────────────────────────────────────────────────────────────
@@ -711,20 +759,29 @@ export default function Home() {
             };
             const d = tabData[tab];
             if (!d) return null;
+            const isCancelTab = tab === "cancelados";
             return (
               <TabsContent key={tab} value={tab} className="mt-4">
                 <div className="flex items-center justify-between mb-3">
                   {d.info ?? <span />}
-                  <Button
-                    variant="outline" size="sm"
-                    className="shrink-0 ml-2"
-                    onClick={() => printRecords(d.label, d.records, result.companyInfo)}
-                  >
-                    <Printer className="w-3.5 h-3.5 mr-1.5" />
-                    Imprimir
-                  </Button>
+                  <div className="flex gap-2 shrink-0 ml-2">
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => exportCsv(d.label, d.records, result.companyInfo)}
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5 text-green-600" />
+                      Excel
+                    </Button>
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => printRecords(d.label, d.records, result.companyInfo, isCancelTab)}
+                    >
+                      <Printer className="w-3.5 h-3.5 mr-1.5" />
+                      Imprimir
+                    </Button>
+                  </div>
                 </div>
-                <AuditTable records={d.records} search={search} />
+                <AuditTable records={d.records} search={search} showCancelledValues={isCancelTab} />
               </TabsContent>
             );
           })}
