@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { parseSintegra } from "@/lib/sintegra-parser";
+import { parseSintegra, readSintegraHeader } from "@/lib/sintegra-parser";
+import type { CompanyInfo } from "@shared/schema";
 import { parseXmlFiles } from "@/lib/xml-parser";
 import { auditar, fmtBRL } from "@/lib/auditor";
 import type { AuditResult, AuditRecord, AuditStatus } from "@shared/schema";
@@ -189,6 +190,7 @@ export default function Home() {
   const [result, setResult] = useState<AuditResult | null>(null);
   const [search, setSearch] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [previewInfo, setPreviewInfo] = useState<CompanyInfo | null>(null);
 
   const sintegraInputRef = useRef<HTMLInputElement>(null);
   const xmlInputRef = useRef<HTMLInputElement>(null);
@@ -215,16 +217,26 @@ export default function Home() {
 
   // ── Handlers ──
 
+  const loadSintegraPreview = useCallback((file: File) => {
+    setSintegraFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      setPreviewInfo(readSintegraHeader(text));
+    };
+    reader.readAsText(file, "latin1");
+  }, []);
+
   const handleSintegraDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
     if (file && file.name.toLowerCase().endsWith(".txt")) {
-      setSintegraFile(file);
+      loadSintegraPreview(file);
     } else {
       toast({ title: "Arquivo inválido", description: "Selecione um arquivo .txt SINTEGRA.", variant: "destructive" });
     }
-  }, [toast]);
+  }, [toast, loadSintegraPreview]);
 
   const handleXmlFolder = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -256,7 +268,20 @@ export default function Home() {
       });
 
       const sintegraData = parseSintegra(sintegraText);
-      const { nfes, cancelamentos, erros } = await parseXmlFiles(xmlFiles);
+      const { nfes, cancelamentos, erros, emitCnpj } = await parseXmlFiles(xmlFiles);
+
+      // Validate CNPJ: SINTEGRA Reg.10 must match <emit><CNPJ> in the XMLs
+      const sintCnpj = sintegraData.companyInfo.cnpj.replace(/\D/g, "");
+      const xmlCnpj = emitCnpj.replace(/\D/g, "");
+      if (sintCnpj && xmlCnpj && sintCnpj !== xmlCnpj) {
+        toast({
+          title: "CNPJ divergente — cruzamento bloqueado",
+          description: `SINTEGRA: ${sintCnpj} · XMLs: ${xmlCnpj}. Os arquivos pertencem a empresas diferentes.`,
+          variant: "destructive",
+        });
+        setProcessing(false);
+        return;
+      }
 
       const auditResult = auditar(sintegraData, nfes, cancelamentos);
       setResult(auditResult);
@@ -284,6 +309,7 @@ export default function Home() {
     setXmlFiles([]);
     setResult(null);
     setSearch("");
+    setPreviewInfo(null);
     if (sintegraInputRef.current) sintegraInputRef.current.value = "";
     if (xmlInputRef.current) xmlInputRef.current.value = "";
   }, []);
@@ -309,7 +335,14 @@ export default function Home() {
             </div>
             <div>
               <h1 className="font-semibold text-foreground text-base leading-tight">Auditor XML × SINTEGRA</h1>
-              <p className="text-xs text-muted-foreground">V9 INFORMATICA — (37) 4141-0341</p>
+              {previewInfo?.name ? (
+                <p className="text-xs text-foreground font-medium">
+                  {previewInfo.name}
+                  <span className="text-muted-foreground font-mono ml-2">{previewInfo.cnpj}</span>
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">V9 INFORMATICA — (37) 4141-0341</p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -354,7 +387,7 @@ export default function Home() {
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) setSintegraFile(f);
+                    if (f) loadSintegraPreview(f);
                   }}
                 />
                 {sintegraFile ? (

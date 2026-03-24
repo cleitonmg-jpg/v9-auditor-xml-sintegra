@@ -16,6 +16,25 @@ function parseValue(raw: string): number {
   return isNaN(n) ? 0 : n / 100;
 }
 
+// Fast header read — extracts only company name and CNPJ from Registro 10/11
+export function readSintegraHeader(content: string): CompanyInfo {
+  let name = "";
+  let cnpj = "";
+  for (const line of content.split(/\r?\n/).slice(0, 30)) {
+    if (line.length < 2) continue;
+    const t = line.substring(0, 2);
+    if (t === "10") {
+      cnpj = line.substring(2, 16).trim();
+      name = line.substring(30, 65).trim();
+    }
+    if (t === "11" && !name) {
+      name = line.substring(2, 49).trim();
+    }
+    if (cnpj && name) break;
+  }
+  return { name, cnpj };
+}
+
 export function parseSintegra(content: string): SintegraData {
   const lines = content.split(/\r?\n/);
 

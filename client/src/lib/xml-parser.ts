@@ -133,6 +133,7 @@ export async function parseXmlFiles(files: File[]): Promise<{
   nfes: XmlNFe[];
   cancelamentos: XmlNFe[];
   erros: string[];
+  emitCnpj: string; // CNPJ do emitente extraído do primeiro XML válido
 }> {
   // Buffer all cancel events (procEvento) separately from regular NF-e
   const cancelEventos: XmlNFe[] = [];
@@ -140,6 +141,7 @@ export async function parseXmlFiles(files: File[]): Promise<{
   // Prefer authorized (cancelada=false) over rejected
   const nfesBuffer = new Map<string, XmlNFe>();
   const erros: string[] = [];
+  let emitCnpj = "";
 
   for (const file of files) {
     if (!file.name.toLowerCase().endsWith(".xml")) continue;
@@ -154,6 +156,16 @@ export async function parseXmlFiles(files: File[]): Promise<{
         // Actual cancellation event (procEvento tpEvento=110111)
         cancelEventos.push(result);
       } else {
+        // Extract emitente CNPJ from the first valid NF-e we find
+        if (!emitCnpj) {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(text, "application/xml");
+          const emitEl = doc.getElementsByTagName("emit")[0];
+          if (emitEl) {
+            const cnpj = getTagText(emitEl, "CNPJ").replace(/\D/g, "");
+            if (cnpj) emitCnpj = cnpj;
+          }
+        }
         // Regular NF-e / NFC-e: buffer and prefer authorized version
         const key = `${result.modelo}-${result.numero}`;
         const existing = nfesBuffer.get(key);
@@ -169,5 +181,5 @@ export async function parseXmlFiles(files: File[]): Promise<{
   // Only authorized NF-e records go to nfes
   const nfes = Array.from(nfesBuffer.values()).filter((r) => !r.cancelada);
 
-  return { nfes, cancelamentos: cancelEventos, erros };
+  return { nfes, cancelamentos: cancelEventos, erros, emitCnpj };
 }
