@@ -184,12 +184,14 @@ export function auditar(
     (r) => r.status === "cancelado_sintegra" || r.status === "cancelado_xml"
   ).length;
 
-  // totalSintegra uses the consolidated sintegraMap (Reg.50 mod.55 + Reg.61 mod.65)
-  const totalSintegra = Array.from(sintegraMap.values())
-    .filter((r) => !r.cancelada)
-    .reduce((s, r) => s + r.valorTotal, 0);
+  // Totals: only valid (non-cancelled) documents
+  const totalSintegra = auditRecords
+    .filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml")
+    .reduce((s, r) => s + (r.sintegraValor ?? 0), 0);
 
-  const totalXml = xmlValidos.reduce((s, r) => s + r.valorTotal, 0);
+  const totalXml = auditRecords
+    .filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml")
+    .reduce((s, r) => s + (r.xmlValor ?? 0), 0);
 
   return {
     companyInfo,

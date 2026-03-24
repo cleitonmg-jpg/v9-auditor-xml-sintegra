@@ -1,27 +1,42 @@
-import fs from "fs";
-import path from "path";
+// In-memory stats — resets on server restart (no database)
+let totalVisits = 0;
+const onlineUsers = new Map<string, number>(); // ip -> lastSeen ms
 
-const COUNTER_FILE = path.join(process.cwd(), "upload_counter.json");
+const ONLINE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-export function getUploadCount(): number {
-  try {
-    if (fs.existsSync(COUNTER_FILE)) {
-      const data = fs.readFileSync(COUNTER_FILE, "utf-8");
-      return JSON.parse(data).count || 0;
-    }
-  } catch (e) {
-    console.error("Error reading counter:", e);
+function getClientIp(req: { ip?: string; headers: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } }): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) {
+    const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0];
+    return ip.trim();
   }
-  return 0;
+  return req.ip || req.socket?.remoteAddress || "unknown";
 }
 
-export function incrementUploadCount(): number {
-  let count = getUploadCount();
-  count++;
-  try {
-    fs.writeFileSync(COUNTER_FILE, JSON.stringify({ count }), "utf-8");
-  } catch (e) {
-    console.error("Error writing counter:", e);
+function cleanOldUsers() {
+  const cutoff = Date.now() - ONLINE_TIMEOUT_MS;
+  for (const [ip, lastSeen] of onlineUsers.entries()) {
+    if (lastSeen < cutoff) onlineUsers.delete(ip);
   }
-  return count;
 }
+
+export function recordVisit(req: Parameters<typeof getClientIp>[0]): void {
+  totalVisits++;
+  onlineUsers.set(getClientIp(req), Date.now());
+}
+
+export function ping(req: Parameters<typeof getClientIp>[0]): void {
+  onlineUsers.set(getClientIp(req), Date.now());
+}
+
+export function getStats() {
+  cleanOldUsers();
+  return {
+    totalVisits,
+    onlineNow: onlineUsers.size,
+  };
+}
+
+// Legacy — kept for compatibility
+export function getUploadCount(): number { return totalVisits; }
+export function incrementUploadCount(): number { totalVisits++; return totalVisits; }

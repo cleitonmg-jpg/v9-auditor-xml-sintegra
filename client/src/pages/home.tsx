@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Upload, FileText, FolderOpen, BarChart3, CheckCircle2,
   AlertTriangle, XCircle, FileX, FilePlus, RotateCcw,
@@ -13,6 +13,7 @@ import { parseSintegra } from "@/lib/sintegra-parser";
 import { parseXmlFiles } from "@/lib/xml-parser";
 import { auditar, fmtBRL } from "@/lib/auditor";
 import type { AuditResult, AuditRecord, AuditStatus } from "@shared/schema";
+import { APP_VERSION } from "@shared/schema";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -192,6 +193,26 @@ export default function Home() {
   const sintegraInputRef = useRef<HTMLInputElement>(null);
   const xmlInputRef = useRef<HTMLInputElement>(null);
 
+  const [siteStats, setSiteStats] = useState<{ totalVisits: number; onlineNow: number } | null>(null);
+
+  useEffect(() => {
+    // Register visit on first load
+    fetch("/api/visit", { method: "POST" })
+      .then((r) => r.json())
+      .then(setSiteStats)
+      .catch(() => {});
+
+    // Heartbeat every 30s to keep user marked as online
+    const interval = setInterval(() => {
+      fetch("/api/ping", { method: "POST" })
+        .then((r) => r.json())
+        .then(setSiteStats)
+        .catch(() => {});
+    }, 30_000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   // ── Handlers ──
 
   const handleSintegraDrop = useCallback((e: React.DragEvent) => {
@@ -290,6 +311,15 @@ export default function Home() {
               <h1 className="font-semibold text-foreground text-base leading-tight">Auditor XML × SINTEGRA</h1>
               <p className="text-xs text-muted-foreground">V9 INFORMATICA — (37) 4141-0341</p>
             </div>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            {siteStats && (
+              <>
+                <span title="Visitas totais">👁 {siteStats.totalVisits.toLocaleString("pt-BR")} visitas</span>
+                <span title="Usuários online agora" className="text-green-600 font-medium">● {siteStats.onlineNow} online</span>
+              </>
+            )}
+            <span className="font-mono bg-muted px-2 py-0.5 rounded text-xs">v{APP_VERSION}</span>
           </div>
         </header>
 
@@ -434,10 +464,19 @@ export default function Home() {
             <p className="text-xs text-muted-foreground">Auditor XML × SINTEGRA · V9 INFORMATICA</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={handleReset} className="shrink-0">
-          <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-          Novo
-        </Button>
+        <div className="flex items-center gap-3 shrink-0">
+          {siteStats && (
+            <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground">
+              <span>👁 {siteStats.totalVisits.toLocaleString("pt-BR")}</span>
+              <span className="text-green-600 font-medium">● {siteStats.onlineNow} online</span>
+              <span className="font-mono bg-muted px-2 py-0.5 rounded">v{APP_VERSION}</span>
+            </div>
+          )}
+          <Button size="sm" onClick={handleReset} className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow">
+            <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+            Novo
+          </Button>
+        </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
