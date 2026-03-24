@@ -32,6 +32,17 @@ export function auditar(
     }
   }
 
+  // Save XML values of cancelled NF-e BEFORE filtering them out.
+  // This lets us show the XML value even for cancelled mod.55/65 records.
+  const cancelledXmlValues = new Map<string, number>();
+  for (const nfe of xmlNfes) {
+    if (nfe.modelo !== "55" && nfe.modelo !== "65") continue;
+    const key = makeKey(nfe.modelo, nfe.numero);
+    if (canceladosXmlKeys.has(key) && nfe.valorTotal > 0) {
+      cancelledXmlValues.set(key, nfe.valorTotal);
+    }
+  }
+
   // Filter XML records: remove those that have a cancellation
   // Only keep model 55 and 65
   const xmlValidos = xmlNfes.filter((nfe) => {
@@ -123,7 +134,11 @@ export function auditar(
     const dataEmissao = xmlRec?.dataEmissao || sintRec?.date || "";
 
     const sintegraValor = sintRec ? sintRec.valorTotal : null;
-    const xmlValor = xmlRec ? xmlRec.valorTotal : null;
+    // For cancelled NF-e whose authorized XML was removed from xmlValidos,
+    // recover the value from cancelledXmlValues so it's visible in the report.
+    const xmlValor = xmlRec
+      ? xmlRec.valorTotal
+      : (cancelledXmlValues.get(key) ?? null);
 
     let status: AuditStatus;
     let diferenca = 0;

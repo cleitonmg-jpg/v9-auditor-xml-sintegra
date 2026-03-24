@@ -157,22 +157,49 @@ function AuditTable({ records, search, showCancelledValues = false }: { records:
           ))}
         </tbody>
         <tfoot className="bg-muted/30 border-t font-semibold text-sm">
-          <tr>
-            <td colSpan={4} className="px-3 py-2">Total ({sorted.length} registros)</td>
-            <td className="px-3 py-2 text-right font-mono">
-              {fmtBRL(sorted.filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml").reduce((s, r) => s + (r.sintegraValor ?? 0), 0))}
-            </td>
-            <td className="px-3 py-2 text-right font-mono">
-              {fmtBRL(sorted.filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml").reduce((s, r) => s + (r.xmlValor ?? 0), 0))}
-            </td>
-            <td className="px-3 py-2 text-right font-mono text-amber-700">
-              {(() => {
-                const diff = sorted.reduce((s, r) => s + r.diferenca, 0);
-                return diff !== 0 ? (diff > 0 ? "+" : "") + fmtBRL(diff) : "—";
-              })()}
-            </td>
-            <td className="px-3 py-2" />
-          </tr>
+          {showCancelledValues ? (
+            // Cancelled tab: show subtotals per model + grand total
+            <>
+              {(["55", "65"] as const).map((mod) => {
+                const modRecs = sorted.filter((r) => r.modelo === mod);
+                if (modRecs.length === 0) return null;
+                const tXml = modRecs.reduce((s, r) => s + (r.xmlValor ?? 0), 0);
+                return (
+                  <tr key={mod} className="text-xs opacity-80">
+                    <td colSpan={4} className="px-3 py-1.5">Subtotal Mod.{mod} ({modRecs.length})</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">—</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(tXml)}</td>
+                    <td colSpan={2} className="px-3 py-1.5" />
+                  </tr>
+                );
+              })}
+              <tr className="border-t">
+                <td colSpan={4} className="px-3 py-2">Total ({sorted.length} cancelados)</td>
+                <td className="px-3 py-2 text-right font-mono text-muted-foreground">—</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {fmtBRL(sorted.reduce((s, r) => s + (r.xmlValor ?? 0), 0))}
+                </td>
+                <td colSpan={2} className="px-3 py-2" />
+              </tr>
+            </>
+          ) : (
+            <tr>
+              <td colSpan={4} className="px-3 py-2">Total ({sorted.length} registros)</td>
+              <td className="px-3 py-2 text-right font-mono">
+                {fmtBRL(sorted.filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml").reduce((s, r) => s + (r.sintegraValor ?? 0), 0))}
+              </td>
+              <td className="px-3 py-2 text-right font-mono">
+                {fmtBRL(sorted.filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml").reduce((s, r) => s + (r.xmlValor ?? 0), 0))}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-amber-700">
+                {(() => {
+                  const diff = sorted.reduce((s, r) => s + r.diferenca, 0);
+                  return diff !== 0 ? (diff > 0 ? "+" : "") + fmtBRL(diff) : "—";
+                })()}
+              </td>
+              <td className="px-3 py-2" />
+            </tr>
+          )}
         </tfoot>
       </table>
     </div>
