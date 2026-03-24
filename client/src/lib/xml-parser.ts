@@ -134,8 +134,11 @@ export async function parseXmlFiles(files: File[]): Promise<{
   cancelamentos: XmlNFe[];
   erros: string[];
 }> {
-  const nfes: XmlNFe[] = [];
-  const cancelamentos: XmlNFe[] = [];
+  // Buffer all cancel events (procEvento) separately from regular NF-e
+  const cancelEventos: XmlNFe[] = [];
+  // Buffer regular NF-e: key (modelo-numero) -> best record found so far
+  // Prefer authorized (cancelada=false) over rejected
+  const nfesBuffer = new Map<string, XmlNFe>();
   const erros: string[] = [];
 
   for (const file of files) {
@@ -145,20 +148,26 @@ export async function parseXmlFiles(files: File[]): Promise<{
       const text = await file.text();
       const result = parseNFe(text, file.name);
 
-      if (!result) {
-        // Not parseable or not relevant
-        continue;
-      }
+      if (!result) continue;
 
-      if (result.cancelada && result.numero) {
-        cancelamentos.push(result);
-      } else if (!result.cancelada) {
-        nfes.push(result);
+      if (result.id.startsWith("cancel-")) {
+        // Actual cancellation event (procEvento tpEvento=110111)
+        cancelEventos.push(result);
+      } else {
+        // Regular NF-e / NFC-e: buffer and prefer authorized version
+        const key = `${result.modelo}-${result.numero}`;
+        const existing = nfesBuffer.get(key);
+        if (!existing || (!result.cancelada && existing.cancelada)) {
+          nfesBuffer.set(key, result);
+        }
       }
     } catch (e) {
       erros.push(file.name);
     }
   }
 
-  return { nfes, cancelamentos, erros };
+  // Only authorized NF-e records go to nfes
+  const nfes = Array.from(nfesBuffer.values()).filter((r) => !r.cancelada);
+
+  return { nfes, cancelamentos: cancelEventos, erros };
 }

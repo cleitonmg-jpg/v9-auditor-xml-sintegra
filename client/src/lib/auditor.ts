@@ -51,15 +51,23 @@ export function auditar(
     }
   }
 
-  // Build map from SINTEGRA Reg50: key -> Record50[]
+  // Build map from SINTEGRA Reg50: key -> Record50
   // Only model 55 (emitente=P próprio) and 65 (NFC-e)
+  // Multiple lines per NF (different CFOP/aliquota) → sum valorTotal
   const sintegraMap = new Map<string, Record50>();
   for (const r of records50) {
     const modelo = r.modelo.trim();
     if (modelo === "55" && r.emitente.trim() !== "P") continue;
     if (modelo !== "55" && modelo !== "65") continue;
     const key = makeKey(modelo, r.numero);
-    if (!sintegraMap.has(key)) sintegraMap.set(key, r);
+    const existing = sintegraMap.get(key);
+    if (!existing) {
+      // Clone to avoid mutating original record
+      sintegraMap.set(key, { ...r });
+    } else {
+      // Same NF, different CFOP/aliquota line — accumulate total
+      existing.valorTotal = Math.round((existing.valorTotal + r.valorTotal) * 100) / 100;
+    }
   }
 
   const auditRecords: AuditRecord[] = [];
