@@ -336,6 +336,7 @@ export default function Home() {
   const [dragOver, setDragOver] = useState(false);
   const [previewInfo, setPreviewInfo] = useState<CompanyInfo | null>(null);
   const [previewPeriod, setPreviewPeriod] = useState<{ mes: number; ano: number } | null>(null);
+  const [modoExigencia, setModoExigencia] = useState(false);
 
   const sintegraInputRef = useRef<HTMLInputElement>(null);
   const xmlInputRef = useRef<HTMLInputElement>(null);
@@ -430,7 +431,7 @@ export default function Home() {
         return;
       }
 
-      const auditResult = auditar(sintegraData, nfes, cancelamentos);
+      const auditResult = auditar(sintegraData, nfes, cancelamentos, modoExigencia);
       setResult(auditResult);
 
       if (fora_periodo.length > 0 && reference) {
@@ -630,7 +631,17 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+              <input
+                type="checkbox"
+                checked={modoExigencia}
+                onChange={(e) => setModoExigencia(e.target.checked)}
+                className="w-4 h-4 accent-primary"
+              />
+              <span className="font-medium">Modo Exigência</span>
+              <span className="text-muted-foreground text-xs">(diferença ≥ R$ 0,01 = divergência)</span>
+            </label>
             <Button
               size="lg"
               onClick={handleProcess}

@@ -7,7 +7,8 @@ import type {
   AuditStatus,
 } from "@shared/schema";
 
-const TOLERANCE = 0.02; // R$ 0,02 tolerance for float comparison
+const TOLERANCE_NORMAL = 0.02; // R$ 0,02 — tolerância padrão
+const TOLERANCE_EXIGENCIA = 0.005; // R$ 0,01 — modo exigência (≥ 0,01 = divergência)
 
 function normNum(n: string): string {
   return String(parseInt(n, 10) || 0);
@@ -20,8 +21,10 @@ function makeKey(modelo: string, numero: string): string {
 export function auditar(
   sintegraData: SintegraData,
   xmlNfes: XmlNFe[],
-  cancelamentosXml: XmlNFe[]
+  cancelamentosXml: XmlNFe[],
+  modoExigencia = false
 ): AuditResult {
+  const TOLERANCE = modoExigencia ? TOLERANCE_EXIGENCIA : TOLERANCE_NORMAL;
   const { companyInfo, records50, records61 } = sintegraData;
 
   // Build set of cancelled XML chaves/numbers per model
