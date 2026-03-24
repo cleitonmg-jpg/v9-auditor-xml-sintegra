@@ -2,14 +2,14 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Upload, FileText, FolderOpen, BarChart3, CheckCircle2,
   AlertTriangle, XCircle, FileX, FilePlus, RotateCcw,
-  Building2, Search, ChevronDown, ChevronUp,
+  Building2, Search, ChevronDown, ChevronUp, Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { parseSintegra, readSintegraHeader } from "@/lib/sintegra-parser";
+import { parseSintegra, readSintegraHeader, readSintegraReference } from "@/lib/sintegra-parser";
 import type { CompanyInfo } from "@shared/schema";
 import { parseXmlFiles } from "@/lib/xml-parser";
 import { auditar, fmtBRL } from "@/lib/auditor";
@@ -179,6 +179,64 @@ function AuditTable({ records, search }: { records: AuditRecord[]; search: strin
   );
 }
 
+// ── Print ───────────────────────────────────────────────────────────────────
+
+function printRecords(title: string, records: AuditRecord[], company: { name: string; cnpj: string }) {
+  const win = window.open("", "_blank", "width=960,height=720");
+  if (!win) return;
+
+  const valid = (r: AuditRecord) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml";
+  const totalSint = records.filter(valid).reduce((s, r) => s + (r.sintegraValor ?? 0), 0);
+  const totalXml  = records.filter(valid).reduce((s, r) => s + (r.xmlValor ?? 0), 0);
+
+  const bgMap: Record<AuditStatus, string> = {
+    ok: "", divergencia: "background:#fef3c7",
+    somente_sintegra: "background:#dbeafe", somente_xml: "background:#f3e8ff",
+    cancelado_sintegra: "opacity:.55", cancelado_xml: "opacity:.55",
+  };
+
+  const rows = records.map((r) => {
+    const cancelled = !valid(r);
+    return `<tr style="${bgMap[r.status]}">
+      <td>${r.numero}</td><td>${r.serie || "—"}</td><td>${r.dataEmissao || "—"}</td>
+      <td style="text-align:center">${r.modelo}</td>
+      <td style="text-align:right">${cancelled ? "—" : r.sintegraValor !== null ? "R$ " + fmtBRL(r.sintegraValor) : "—"}</td>
+      <td style="text-align:right">${cancelled ? "—" : r.xmlValor !== null ? "R$ " + fmtBRL(r.xmlValor) : "—"}</td>
+      <td style="text-align:right">${r.diferenca !== 0 ? (r.diferenca > 0 ? "+" : "") + fmtBRL(r.diferenca) : "—"}</td>
+      <td>${statusLabel(r.status)}</td>
+    </tr>`;
+  }).join("");
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#111}
+    h2{font-size:15px;margin:0 0 2px}
+    .sub{color:#666;font-size:10px;margin-bottom:14px}
+    table{width:100%;border-collapse:collapse}
+    th{background:#f4f4f5;padding:5px 7px;text-align:left;border-bottom:2px solid #ccc;font-size:10px}
+    td{padding:4px 7px;border-bottom:1px solid #eee}
+    tfoot td{font-weight:700;background:#f4f4f5;border-top:2px solid #ccc}
+    @media print{@page{margin:15mm}}
+  </style></head><body>
+  <h2>Auditor XML × SINTEGRA — ${title}</h2>
+  <div class="sub">${company.name} &nbsp;·&nbsp; CNPJ: ${company.cnpj} &nbsp;·&nbsp; ${new Date().toLocaleDateString("pt-BR")}</div>
+  <table>
+    <thead><tr><th>Nº Nota</th><th>Série</th><th>Data</th><th>Mod.</th>
+      <th>Valor SINTEGRA</th><th>Valor XML</th><th>Diferença</th><th>Status</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr>
+      <td colspan="4">Total (${records.length} registros — ${records.filter(valid).length} válidos)</td>
+      <td style="text-align:right">R$ ${fmtBRL(totalSint)}</td>
+      <td style="text-align:right">R$ ${fmtBRL(totalXml)}</td>
+      <td></td><td></td>
+    </tr></tfoot>
+  </table>
+  <script>window.onload=()=>window.print();</script>
+  </body></html>`);
+  win.document.close();
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -191,6 +249,7 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [previewInfo, setPreviewInfo] = useState<CompanyInfo | null>(null);
+  const [previewPeriod, setPreviewPeriod] = useState<{ mes: number; ano: number } | null>(null);
 
   const sintegraInputRef = useRef<HTMLInputElement>(null);
   const xmlInputRef = useRef<HTMLInputElement>(null);
@@ -223,6 +282,7 @@ export default function Home() {
     reader.onload = (e) => {
       const text = e.target?.result as string;
       setPreviewInfo(readSintegraHeader(text));
+      setPreviewPeriod(readSintegraReference(text));
     };
     reader.readAsText(file, "latin1");
   }, []);
@@ -268,7 +328,8 @@ export default function Home() {
       });
 
       const sintegraData = parseSintegra(sintegraText);
-      const { nfes, cancelamentos, erros, emitCnpj } = await parseXmlFiles(xmlFiles);
+      const reference = readSintegraReference(sintegraText);
+      const { nfes, cancelamentos, erros, emitCnpj, fora_periodo } = await parseXmlFiles(xmlFiles, reference ?? undefined);
 
       // Validate CNPJ: SINTEGRA Reg.10 must match <emit><CNPJ> in the XMLs
       const sintCnpj = sintegraData.companyInfo.cnpj.replace(/\D/g, "");
@@ -285,6 +346,14 @@ export default function Home() {
 
       const auditResult = auditar(sintegraData, nfes, cancelamentos);
       setResult(auditResult);
+
+      if (fora_periodo.length > 0 && reference) {
+        toast({
+          title: `${fora_periodo.length} XML(s) fora do período ${String(reference.mes).padStart(2,"0")}/${reference.ano}`,
+          description: `Ignorados: ${fora_periodo.slice(0, 3).join(", ")}${fora_periodo.length > 3 ? ` e mais ${fora_periodo.length - 3}...` : ""}`,
+          variant: "destructive",
+        });
+      }
 
       if (erros.length > 0) {
         toast({
@@ -310,9 +379,12 @@ export default function Home() {
     setResult(null);
     setSearch("");
     setPreviewInfo(null);
+    setPreviewPeriod(null);
     if (sintegraInputRef.current) sintegraInputRef.current.value = "";
     if (xmlInputRef.current) xmlInputRef.current.value = "";
   }, []);
+
+  const [activeTab, setActiveTab] = useState("todos");
 
   // ── Derived data ──
 
@@ -321,6 +393,10 @@ export default function Home() {
   const recordsSomenteStegra = result?.records.filter((r) => r.status === "somente_sintegra") ?? [];
   const recordsSomenteXml = result?.records.filter((r) => r.status === "somente_xml") ?? [];
   const recordsDivergencia = result?.records.filter((r) => r.status === "divergencia") ?? [];
+  const recordsCancelados = result?.records.filter(
+    (r) => r.status === "cancelado_sintegra" || r.status === "cancelado_xml"
+  ) ?? [];
+  const totalXmlCancelados = recordsCancelados.reduce((s, r) => s + (r.xmlValor ?? 0), 0);
 
   // ── Render: Upload ──
 
@@ -339,6 +415,11 @@ export default function Home() {
                 <p className="text-xs text-foreground font-medium">
                   {previewInfo.name}
                   <span className="text-muted-foreground font-mono ml-2">{previewInfo.cnpj}</span>
+                  {previewPeriod && (
+                    <span className="ml-2 px-1.5 py-0.5 bg-primary/10 text-primary rounded font-mono">
+                      {String(previewPeriod.mes).padStart(2,"0")}/{previewPeriod.ano}
+                    </span>
+                  )}
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">V9 INFORMATICA — (37) 4141-0341</p>
@@ -516,39 +597,17 @@ export default function Home() {
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {[
-            {
-              label: "OK",
-              value: result.totalOk,
-              icon: <CheckCircle2 className="w-4 h-4" />,
-              color: "text-green-700 bg-green-50 border-green-200",
-            },
-            {
-              label: "Divergências",
-              value: result.totalDivergencia,
-              icon: <AlertTriangle className="w-4 h-4" />,
-              color: "text-amber-700 bg-amber-50 border-amber-200",
-            },
-            {
-              label: "Falta no XML",
-              value: result.totalSomenteStegra,
-              icon: <FileX className="w-4 h-4" />,
-              color: "text-blue-700 bg-blue-50 border-blue-200",
-            },
-            {
-              label: "Falta no SINTEGRA",
-              value: result.totalSomenteXml,
-              icon: <FilePlus className="w-4 h-4" />,
-              color: "text-purple-700 bg-purple-50 border-purple-200",
-            },
-            {
-              label: "Cancelados",
-              value: result.totalCancelados,
-              icon: <XCircle className="w-4 h-4" />,
-              color: "text-gray-600 bg-gray-50 border-gray-200",
-            },
-          ].map((c, i) => (
-            <div key={i} className={`rounded-xl border p-4 flex items-center gap-3 ${c.color}`}>
+          {([
+            { label: "OK",              value: result.totalOk,           tab: "todos",          icon: <CheckCircle2 className="w-4 h-4" />, color: "text-green-700 bg-green-50 border-green-200" },
+            { label: "Divergências",    value: result.totalDivergencia,  tab: "divergencias",   icon: <AlertTriangle className="w-4 h-4" />, color: "text-amber-700 bg-amber-50 border-amber-200" },
+            { label: "Falta no XML",    value: result.totalSomenteStegra,tab: "falta_xml",      icon: <FileX className="w-4 h-4" />, color: "text-blue-700 bg-blue-50 border-blue-200" },
+            { label: "Falta SINTEGRA",  value: result.totalSomenteXml,   tab: "falta_sintegra", icon: <FilePlus className="w-4 h-4" />, color: "text-purple-700 bg-purple-50 border-purple-200" },
+          ] as const).map((c) => (
+            <div
+              key={c.tab}
+              className={`rounded-xl border p-4 flex items-center gap-3 cursor-pointer hover:brightness-95 transition ${c.color}`}
+              onClick={() => setActiveTab(c.tab)}
+            >
               {c.icon}
               <div>
                 <p className="text-2xl font-bold leading-none">{c.value}</p>
@@ -556,6 +615,20 @@ export default function Home() {
               </div>
             </div>
           ))}
+          {/* Cancelados card — clicável + mostra total XML cancelado */}
+          <div
+            className="rounded-xl border p-4 flex items-center gap-3 cursor-pointer hover:brightness-95 transition text-gray-600 bg-gray-50 border-gray-200"
+            onClick={() => setActiveTab("cancelados")}
+          >
+            <XCircle className="w-4 h-4 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-2xl font-bold leading-none">{result.totalCancelados}</p>
+              <p className="text-xs mt-0.5 opacity-80">Cancelados</p>
+              {totalXmlCancelados > 0 && (
+                <p className="text-xs font-mono mt-1 text-gray-500">XML: R$ {fmtBRL(totalXmlCancelados)}</p>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Totals comparison */}
@@ -582,7 +655,7 @@ export default function Home() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="todos">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="flex-wrap h-auto gap-1 p-1">
             <TabsTrigger value="todos">
               Todos <Badge variant="secondary" className="ml-1 text-xs">{result.records.length}</Badge>
@@ -613,44 +686,48 @@ export default function Home() {
                 Falta no SINTEGRA <Badge className="ml-1 text-xs bg-purple-100 text-purple-800 border-purple-200">{recordsSomenteXml.length}</Badge>
               </TabsTrigger>
             )}
+            {recordsCancelados.length > 0 && (
+              <TabsTrigger value="cancelados">
+                <XCircle className="w-3.5 h-3.5 mr-1 text-gray-500" />
+                Cancelados <Badge variant="secondary" className="ml-1 text-xs">{recordsCancelados.length}</Badge>
+              </TabsTrigger>
+            )}
           </TabsList>
 
-          <TabsContent value="todos" className="mt-4">
-            <AuditTable records={result.records} search={search} />
-          </TabsContent>
-
-          <TabsContent value="nfe55" className="mt-4">
-            <AuditTable records={records55} search={search} />
-          </TabsContent>
-
-          <TabsContent value="nfce65" className="mt-4">
-            <AuditTable records={records65} search={search} />
-          </TabsContent>
-
-          <TabsContent value="divergencias" className="mt-4">
-            <div className="mb-3 flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              Documentos com diferença de valor entre SINTEGRA e XML superior a R$ 0,02
-            </div>
-            <AuditTable records={recordsDivergencia} search={search} />
-          </TabsContent>
-
-          <TabsContent value="falta_xml" className="mt-4">
-            <div className="mb-3 flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm">
-              <FileX className="w-4 h-4 shrink-0" />
-              Registros presentes no SINTEGRA sem correspondente XML na pasta selecionada
-            </div>
-            <AuditTable records={recordsSomenteStegra} search={search} />
-          </TabsContent>
-
-          <TabsContent value="falta_sintegra" className="mt-4">
-            <div className="mb-3 flex items-center gap-2 p-3 bg-purple-50 border border-purple-200 rounded-lg text-purple-800 text-sm">
-              <FilePlus className="w-4 h-4 shrink-0" />
-              Documentos XML válidos sem correspondente no SINTEGRA
-            </div>
-            <AuditTable records={recordsSomenteXml} search={search} />
-          </TabsContent>
-
+          {/* helper to render tab content with print button */}
+          {(["todos", "nfe55", "nfce65", "divergencias", "falta_xml", "falta_sintegra", "cancelados"] as const).map((tab) => {
+            const tabData: Record<string, { records: AuditRecord[]; label: string; info?: React.ReactNode }> = {
+              todos:         { records: result.records,        label: "Todos" },
+              nfe55:         { records: records55,             label: "NF-e Mod.55" },
+              nfce65:        { records: records65,             label: "NFC-e Mod.65" },
+              divergencias:  { records: recordsDivergencia,   label: "Divergências",
+                info: <div className="mb-3 flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm"><AlertTriangle className="w-4 h-4 shrink-0" />Documentos com diferença de valor entre SINTEGRA e XML superior a R$ 0,02</div> },
+              falta_xml:     { records: recordsSomenteStegra, label: "Falta no XML",
+                info: <div className="mb-3 flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm"><FileX className="w-4 h-4 shrink-0" />Registros presentes no SINTEGRA sem correspondente XML na pasta selecionada</div> },
+              falta_sintegra:{ records: recordsSomenteXml,    label: "Falta no SINTEGRA",
+                info: <div className="mb-3 flex items-center gap-2 p-3 bg-purple-50 border border-purple-200 rounded-lg text-purple-800 text-sm"><FilePlus className="w-4 h-4 shrink-0" />Documentos XML válidos sem correspondente no SINTEGRA</div> },
+              cancelados:    { records: recordsCancelados,    label: "Cancelados",
+                info: <div className="mb-3 flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-600 text-sm"><XCircle className="w-4 h-4 shrink-0" />Documentos cancelados — não entram nos totais</div> },
+            };
+            const d = tabData[tab];
+            if (!d) return null;
+            return (
+              <TabsContent key={tab} value={tab} className="mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  {d.info ?? <span />}
+                  <Button
+                    variant="outline" size="sm"
+                    className="shrink-0 ml-2"
+                    onClick={() => printRecords(d.label, d.records, result.companyInfo)}
+                  >
+                    <Printer className="w-3.5 h-3.5 mr-1.5" />
+                    Imprimir
+                  </Button>
+                </div>
+                <AuditTable records={d.records} search={search} />
+              </TabsContent>
+            );
+          })}
         </Tabs>
       </div>
     </div>

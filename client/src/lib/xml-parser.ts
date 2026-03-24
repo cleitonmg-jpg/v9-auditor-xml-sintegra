@@ -129,19 +129,21 @@ function parseNFe(xmlText: string, fileName: string): XmlNFe | null {
   };
 }
 
-export async function parseXmlFiles(files: File[]): Promise<{
+export async function parseXmlFiles(
+  files: File[],
+  reference?: { mes: number; ano: number }
+): Promise<{
   nfes: XmlNFe[];
   cancelamentos: XmlNFe[];
   erros: string[];
-  emitCnpj: string; // CNPJ do emitente extraído do primeiro XML válido
+  emitCnpj: string;
+  fora_periodo: string[]; // file names whose dhEmi is outside the reference period
 }> {
-  // Buffer all cancel events (procEvento) separately from regular NF-e
   const cancelEventos: XmlNFe[] = [];
-  // Buffer regular NF-e: key (modelo-numero) -> best record found so far
-  // Prefer authorized (cancelada=false) over rejected
   const nfesBuffer = new Map<string, XmlNFe>();
   const erros: string[] = [];
   let emitCnpj = "";
+  const fora_periodo: string[] = [];
 
   for (const file of files) {
     if (!file.name.toLowerCase().endsWith(".xml")) continue;
@@ -153,9 +155,21 @@ export async function parseXmlFiles(files: File[]): Promise<{
       if (!result) continue;
 
       if (result.id.startsWith("cancel-")) {
-        // Actual cancellation event (procEvento tpEvento=110111)
         cancelEventos.push(result);
       } else {
+        // Check reference period against dhEmi (dataEmissao DD/MM/YYYY)
+        if (reference && result.dataEmissao) {
+          const parts = result.dataEmissao.split("/"); // DD/MM/YYYY
+          if (parts.length === 3) {
+            const xmlMes = parseInt(parts[1], 10);
+            const xmlAno = parseInt(parts[2], 10);
+            if (xmlMes !== reference.mes || xmlAno !== reference.ano) {
+              fora_periodo.push(file.name);
+              continue; // skip this file — wrong period
+            }
+          }
+        }
+
         // Extract emitente CNPJ from the first valid NF-e we find
         if (!emitCnpj) {
           const parser = new DOMParser();
@@ -181,5 +195,5 @@ export async function parseXmlFiles(files: File[]): Promise<{
   // Only authorized NF-e records go to nfes
   const nfes = Array.from(nfesBuffer.values()).filter((r) => !r.cancelada);
 
-  return { nfes, cancelamentos: cancelEventos, erros, emitCnpj };
+  return { nfes, cancelamentos: cancelEventos, erros, emitCnpj, fora_periodo };
 }

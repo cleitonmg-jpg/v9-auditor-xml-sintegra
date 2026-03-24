@@ -16,6 +16,31 @@ function parseValue(raw: string): number {
   return isNaN(n) ? 0 : n / 100;
 }
 
+// Extract the reference period (MM/YYYY) from Registro 10 — field dtIni [32:40]
+// Registro 10 layout: tipo(2) cnpj(14) ie(14) nome(35) uf(2) fax(10) dtIni(8) dtFim(8) ...
+// Actually the period is in Registro 10 at positions 69-76 (dtIni AAAAMMDD) or
+// in the file name / Registro 90. The most reliable: Registro 50 dates.
+// We read the first Registro 50 line date as reference month.
+export function readSintegraReference(content: string): { mes: number; ano: number } | null {
+  for (const line of content.split(/\r?\n/)) {
+    if (line.length < 38) continue;
+    if (line.substring(0, 2) === "50") {
+      const raw = line.substring(30, 38); // AAAAMMDD
+      const ano = parseInt(raw.substring(0, 4), 10);
+      const mes = parseInt(raw.substring(4, 6), 10);
+      if (ano > 2000 && mes >= 1 && mes <= 12) return { mes, ano };
+    }
+    // Also try Registro 61
+    if (line.substring(0, 2) === "61") {
+      const raw = line.substring(30, 38);
+      const ano = parseInt(raw.substring(0, 4), 10);
+      const mes = parseInt(raw.substring(4, 6), 10);
+      if (ano > 2000 && mes >= 1 && mes <= 12) return { mes, ano };
+    }
+  }
+  return null;
+}
+
 // Fast header read — extracts only company name and CNPJ from Registro 10/11
 export function readSintegraHeader(content: string): CompanyInfo {
   let name = "";
