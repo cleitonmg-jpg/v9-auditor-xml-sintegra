@@ -63,20 +63,25 @@ export function auditar(
   }
 
   // Build map from SINTEGRA Reg50: key -> Record50
-  // Only model 55 (emitente=P próprio)
-  // Multiple lines per NF (different CFOP/aliquota) → sum valorTotal
+  // Only model 55 (emitente=P próprio) and CFOP de saída (1º dígito 5, 6 ou 7)
+  // Multiple lines per NF (different CFOP/aliquota) → sum valorTotal, accumulate CFOPs
   const sintegraMap = new Map<string, Record50>();
   for (const r of records50) {
     const modelo = r.modelo.trim();
     if (modelo !== "55") continue;
     if (r.emitente.trim() !== "P") continue;
+    const cfopFirst = parseInt(r.cfop.trim().charAt(0), 10);
+    if (cfopFirst < 5) continue; // ignore entradas (1xxx, 2xxx, 3xxx, 4xxx)
     const key = makeKey(modelo, r.numero);
     const existing = sintegraMap.get(key);
     if (!existing) {
       sintegraMap.set(key, { ...r });
     } else {
-      // Same NF, different CFOP/aliquota line — accumulate total
+      // Same NF, different CFOP/aliquota — accumulate total and distinct CFOPs
       existing.valorTotal = Math.round((existing.valorTotal + r.valorTotal) * 100) / 100;
+      const cfops = new Set(existing.cfop.split(",").map((c) => c.trim()));
+      cfops.add(r.cfop.trim());
+      existing.cfop = Array.from(cfops).join(", ");
     }
   }
 

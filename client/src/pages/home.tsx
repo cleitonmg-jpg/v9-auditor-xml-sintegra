@@ -122,6 +122,7 @@ function AuditTable({ records, search, showCancelledValues = false }: { records:
             <Th field="serie" label="Série" />
             <Th field="data" label="Data Emissão" />
             <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Modelo</th>
+            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">CFOP</th>
             <Th field="sintegra" label="Valor SINTEGRA" />
             <Th field="xml" label="Valor XML" />
             <Th field="diff" label="Diferença" />
@@ -136,6 +137,16 @@ function AuditTable({ records, search, showCancelledValues = false }: { records:
               <td className="px-3 py-2 text-muted-foreground">{r.dataEmissao || "—"}</td>
               <td className="px-3 py-2 text-center">
                 <Badge variant="outline" className="text-xs font-mono">{r.modelo}</Badge>
+              </td>
+              <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={r.sintegraRecord?.cfop || ""}>
+                {(() => {
+                  const cfop = r.sintegraRecord?.cfop || "";
+                  if (!cfop) return <span className="opacity-40">—</span>;
+                  const parts = cfop.split(",").map(c => c.trim()).filter(Boolean);
+                  return parts.length > 1
+                    ? <span className="italic opacity-70">Múlt.</span>
+                    : cfop;
+                })()}
               </td>
               <td className="px-3 py-2 text-right font-mono">
                 {(r.status === "cancelado_sintegra" || r.status === "cancelado_xml") && !showCancelledValues
@@ -166,7 +177,7 @@ function AuditTable({ records, search, showCancelledValues = false }: { records:
                 const tXml = modRecs.reduce((s, r) => s + (r.xmlValor ?? 0), 0);
                 return (
                   <tr key={mod} className="text-xs opacity-80">
-                    <td colSpan={4} className="px-3 py-1.5">Subtotal Mod.{mod} ({modRecs.length})</td>
+                    <td colSpan={5} className="px-3 py-1.5">Subtotal Mod.{mod} ({modRecs.length})</td>
                     <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">—</td>
                     <td className="px-3 py-1.5 text-right font-mono">{fmtBRL(tXml)}</td>
                     <td colSpan={2} className="px-3 py-1.5" />
@@ -174,7 +185,7 @@ function AuditTable({ records, search, showCancelledValues = false }: { records:
                 );
               })}
               <tr className="border-t">
-                <td colSpan={4} className="px-3 py-2">Total ({sorted.length} cancelados)</td>
+                <td colSpan={5} className="px-3 py-2">Total ({sorted.length} cancelados)</td>
                 <td className="px-3 py-2 text-right font-mono text-muted-foreground">—</td>
                 <td className="px-3 py-2 text-right font-mono">
                   {fmtBRL(sorted.reduce((s, r) => s + (r.xmlValor ?? 0), 0))}
@@ -184,7 +195,7 @@ function AuditTable({ records, search, showCancelledValues = false }: { records:
             </>
           ) : (
             <tr>
-              <td colSpan={4} className="px-3 py-2">Total ({sorted.length} registros)</td>
+              <td colSpan={5} className="px-3 py-2">Total ({sorted.length} registros)</td>
               <td className="px-3 py-2 text-right font-mono">
                 {fmtBRL(sorted.filter((r) => r.status !== "cancelado_sintegra" && r.status !== "cancelado_xml").reduce((s, r) => s + (r.sintegraValor ?? 0), 0))}
               </td>
