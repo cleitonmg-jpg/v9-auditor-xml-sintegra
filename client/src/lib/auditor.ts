@@ -121,6 +121,20 @@ export function auditar(
     }
   }
 
+  // Remove mod.55 entrada-only NFs from xmlMap (emitente=P, CFOP 1-4xxx)
+  // These NFs appear only in the XML and have no matching saída in SINTEGRA.
+  // They should NOT be shown as "somente_xml" — we work with saídas only.
+  const entradasKeys = new Set<string>();
+  for (const r of records50) {
+    if (r.modelo.trim() !== "55") continue;
+    if (r.emitente.trim() !== "P") continue;
+    const cfopFirst = parseInt(r.cfop.trim().charAt(0), 10);
+    if (cfopFirst >= 5) continue;
+    const key = makeKey("55", r.numero);
+    if (!sintegraMap.has(key)) entradasKeys.add(key);
+  }
+  for (const key of entradasKeys) xmlMap.delete(key);
+
   const auditRecords: AuditRecord[] = [];
 
   // Collect all keys from both sides
