@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -331,6 +332,8 @@ export default function Home() {
   const [sintegraFile, setSintegraFile] = useState<File | null>(null);
   const [xmlFiles, setXmlFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState("");
   const [result, setResult] = useState<AuditResult | null>(null);
   const [search, setSearch] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -405,6 +408,8 @@ export default function Home() {
     }
 
     setProcessing(true);
+    setProgress(0);
+    setProgressLabel("Lendo SINTEGRA...");
     try {
       // Read SINTEGRA
       const sintegraText = await new Promise<string>((resolve, reject) => {
@@ -414,9 +419,21 @@ export default function Home() {
         reader.readAsText(sintegraFile, "latin1");
       });
 
+      setProgress(5);
+      setProgressLabel("Processando SINTEGRA...");
       const sintegraData = parseSintegra(sintegraText);
       const reference = readSintegraReference(sintegraText);
-      const { nfes, cancelamentos, erros, emitCnpj, fora_periodo } = await parseXmlFiles(xmlFiles, reference ?? undefined);
+      setProgress(10);
+      setProgressLabel(`Lendo XMLs (0 de ${xmlFiles.length})...`);
+      const { nfes, cancelamentos, erros, emitCnpj, fora_periodo } = await parseXmlFiles(
+        xmlFiles,
+        reference ?? undefined,
+        (processed, total) => {
+          const pct = 10 + Math.round((processed / total) * 75);
+          setProgress(pct);
+          setProgressLabel(`Lendo XMLs (${processed} de ${total})...`);
+        }
+      );
 
       // Validate CNPJ: SINTEGRA Reg.10 must match <emit><CNPJ> in the XMLs
       const sintCnpj = sintegraData.companyInfo.cnpj.replace(/\D/g, "");
@@ -431,7 +448,11 @@ export default function Home() {
         return;
       }
 
+      setProgress(88);
+      setProgressLabel("Cruzando dados...");
       const auditResult = auditar(sintegraData, nfes, cancelamentos, modoExigencia);
+      setProgress(100);
+      setProgressLabel("Concluído!");
       setResult(auditResult);
 
       if (fora_periodo.length > 0 && reference) {
@@ -457,6 +478,8 @@ export default function Home() {
       toast({ title: "Erro ao processar", description: String(err), variant: "destructive" });
     } finally {
       setProcessing(false);
+      setProgress(0);
+      setProgressLabel("");
     }
   }, [sintegraFile, xmlFiles, toast]);
 
@@ -650,6 +673,15 @@ export default function Home() {
             >
               {processing ? "Processando..." : "Processar Cruzamento"}
             </Button>
+            {processing && (
+              <div className="w-full max-w-sm flex flex-col gap-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{progressLabel}</span>
+                  <span>{progress}%</span>
+                </div>
+                <Progress value={progress} className="h-2" />
+              </div>
+            )}
           </div>
         </div>
       </div>

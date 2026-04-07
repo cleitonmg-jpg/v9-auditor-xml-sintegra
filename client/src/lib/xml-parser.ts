@@ -131,7 +131,8 @@ function parseNFe(xmlText: string, fileName: string): XmlNFe | null {
 
 export async function parseXmlFiles(
   files: File[],
-  reference?: { mes: number; ano: number }
+  reference?: { mes: number; ano: number },
+  onProgress?: (processed: number, total: number) => void
 ): Promise<{
   nfes: XmlNFe[];
   cancelamentos: XmlNFe[];
@@ -144,12 +145,16 @@ export async function parseXmlFiles(
   const erros: string[] = [];
   let emitCnpj = "";
   const fora_periodo: string[] = [];
+  let processed = 0;
+  const total = files.filter((f) => f.name.toLowerCase().endsWith(".xml")).length;
 
   for (const file of files) {
     if (!file.name.toLowerCase().endsWith(".xml")) continue;
 
     try {
       const text = await file.text();
+      processed++;
+      onProgress?.(processed, total);
       const result = parseNFe(text, file.name);
 
       if (!result) continue;
